@@ -1,0 +1,14 @@
+{
+  "name": "rtu-todo-v4",
+  "version": "4.0.0",
+  "private": true,
+  "description": "RTU Todo with local Playwright e-studijas sync",
+  "scripts": {
+    "start": "node server.js",
+    "install-browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright": "^1.55.0"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules
+.rtu-session
+.git
+.env
+.env.*
+*.png
+playwright-report
+test-results

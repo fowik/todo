@@ -1,0 +1,10 @@
+node_modules/
+.rtu-session/
+playwright-report/
+test-results/
+.DS_Store
+.env
+.env.*
+*-preview.png
+deploy-upload/
+rtu-todo-deploy.zip

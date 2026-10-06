@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: rtu-todo
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: RTU_HEADLESS
+        value: "true"
+      - key: MAX_RTU_JOBS
+        value: "1"
