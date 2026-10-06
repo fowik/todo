@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#b7ff35">
-  <title>RTU Todo</title>
-  <link rel="stylesheet" href="style.css?v=20261006-calendar-lessons-4">
+  <title>StudyFlow</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="stylesheet" href="style.css?v=20261007-agenda-7">
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
@@ -13,14 +14,22 @@
   <main class="app">
     <header>
       <div>
-        <p class="eyebrow">RTU • ORTUS • E-STUDIJAS</p>
+        <div class="brand-line"><img class="brand-icon" src="logo.svg" width="38" height="38" alt=""><p class="eyebrow">ORTUS • E-STUDIJAS • TASKS</p></div>
         <h1>Учёба без хаоса.</h1>
         <p class="muted">Пары, задания из e-studijas и личные задачи — в одном месте.</p>
       </div>
       <div class="header-actions">
+        <button id="settingsToggle" class="ghost settings-toggle" aria-expanded="false" aria-controls="settingsPanel"><span class="burger-icon" aria-hidden="true"><i></i><i></i><i></i></span>Настройки</button>
         <button id="theme" class="ghost icon-btn" title="Сменить тему">◐</button>
       </div>
     </header>
+
+    <dialog id="settingsPanel" class="settings-panel" aria-label="Настройки">
+      <div class="settings-heading"><div><p class="eyebrow">ТВОЁ ПРОСТРАНСТВО</p><h2>Настройки</h2></div><button id="settingsClose" class="ghost compact" aria-label="Закрыть настройки">Закрыть</button></div>
+      <p class="muted small">Выбери, какие подключения показывать. Загруженные пары и задачи останутся в календаре.</p>
+      <label class="setting-row"><span><strong>Подключение e-studijas</strong><small>Загрузка заданий RTU</small></span><input id="showRtu" type="checkbox" checked></label>
+      <label class="setting-row"><span><strong>Подключение ORTUS</strong><small>Расписание и импорт .ics</small></span><input id="showOrtus" type="checkbox" checked></label>
+    </dialog>
 
     <section id="setupCard" class="panel setup-card hidden">
       <div>
@@ -32,7 +41,7 @@
     <section id="authCard" class="panel auth-card">
       <div class="auth-copy">
         <p class="eyebrow">ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ</p>
-        <h2>Войди в RTU Todo</h2>
+        <h2>Войди в StudyFlow</h2>
         <p class="muted">Один аккаунт — одинаковые задачи на ПК и телефоне.</p>
       </div>
       <div class="auth-form">
@@ -60,7 +69,7 @@
         <summary class="rtu-connect-head">
           <div>
             <p class="eyebrow">E-STUDIJAS</p>
-            <h2>Подключение RTU</h2>
+            <h2>Загрузка заданий</h2>
           </div>
           <span id="rtuStatusBadge" class="rtu-status idle">Не запущено</span>
         </summary>
@@ -118,18 +127,19 @@
       </section>
 
       <section class="stats">
-        <div><b id="todayCount">0</b><span>сегодня</span></div>
-        <div><b id="weekCount">0</b><span>7 дней</span></div>
-        <div><b id="doneCount">0</b><span>выполнено задач</span></div>
+        <div><span class="stat-label">Пары сегодня</span><b id="todayCount">0</b><span id="todayCountHint" class="stat-hint">По расписанию ORTUS</span></div>
+        <div><span class="stat-label">Задачи к выполнению</span><b id="weekCount">0</b><span id="weekCountHint" class="stat-hint">На сегодня и просроченные</span></div>
+        <div><span class="stat-label">Выполненные задачи</span><b id="doneCount">0</b><span class="stat-hint">Личные и e-studijas · за всё время</span></div>
       </section>
 
       <section class="new-task panel-flat">
         <input id="taskText" placeholder="Например: закончить отчёт по БД">
         <input id="taskDate" type="date">
+        <input id="taskTime" type="time" aria-label="Время задачи (необязательно)" title="Время задачи (необязательно)">
         <select id="taskPriority" title="Приоритет">
-          <option value="normal">Обычный</option>
-          <option value="high">Важный</option>
-          <option value="low">Низкий</option>
+          <option value="normal">🔵 Обычная</option>
+          <option value="high">🔴 Важная</option>
+          <option value="low">🟢 Без спешки</option>
         </select>
         <button id="addTask">Добавить</button>
       </section>
@@ -152,22 +162,34 @@
         <div id="calendarDayTasks" class="calendar-day-tasks"></div>
       </section>
       <nav class="filters" id="listFilters">
-        <button data-filter="all" class="active">Все</button>
-        <button data-filter="today">Сегодня</button>
+        <button data-filter="today" class="active">Сегодня</button>
         <button data-filter="week">7 дней</button>
         <button data-filter="tasks">Только задачи</button>
         <button data-filter="estudijas">e-studijas</button>
+        <button data-filter="all">Все</button>
       </nav>
 
       <div id="list" class="list"></div>
       <p id="empty" class="empty">Здесь пока пусто. Добавь задачу, загрузи .ics или обнови e-studijas.</p>
     </div>
 
-    <footer>RTU Todo v4 • Supabase • e-studijas Bridge</footer>
+    <footer>StudyFlow • Supabase • Render • E-studijas Bridge</footer>
   </main>
+
+  <dialog id="editTaskDialog" class="edit-task-dialog" aria-labelledby="editTaskHeading">
+    <form id="editTaskForm">
+      <div class="settings-heading"><h2 id="editTaskHeading">Изменить задачу</h2><button type="button" id="editTaskClose" class="ghost compact">Закрыть</button></div>
+      <label>Название<input id="editTaskTitle" required maxlength="500"></label>
+      <label>Дата<input id="editTaskDate" type="date" required></label>
+      <label>Время · необязательно<input id="editTaskTime" type="time"></label>
+      <label>Важность<select id="editTaskPriority"><option value="low">🟢 Без спешки</option><option value="normal">🔵 Обычная</option><option value="high">🔴 Важная</option></select></label>
+      <button id="editTaskSave" type="submit">Сохранить</button>
+      <p class="muted small">Изменения сохраняются в твой аккаунт.</p>
+    </form>
+  </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
-  <script src="app.js?v=20261006-hosting-auth-5"></script>
+  <script src="app.js?v=20261007-agenda-7"></script>
 </body>
 </html>

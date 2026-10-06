@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npx playwright install --with-deps chromium \
     && mkdir -p /data/rtu-sessions && chown -R node:node /data /app
-COPY --chown=node:node index.html app.js style.css config.js server.js hosting-auth.js ./
+COPY --chown=node:node index.html app.js style.css logo.svg config.js server.js hosting-auth.js ./
 USER node
 EXPOSE 8000
 CMD ["node", "server.js"]

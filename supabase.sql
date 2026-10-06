@@ -6,10 +6,13 @@ create table if not exists public.tasks (
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null check (char_length(title) between 1 and 500),
   task_date date not null,
+  task_time time,
   done boolean not null default false,
   priority text not null default 'normal' check (priority in ('low','normal','high')),
   created_at timestamptz not null default now()
 );
+
+alter table public.tasks add column if not exists task_time time;
 
 create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),

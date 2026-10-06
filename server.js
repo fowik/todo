@@ -14,7 +14,7 @@ const config = loadConfig();
 app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/config.js', (_req, res) => res.type('application/javascript').send(`window.RTU_CONFIG = ${JSON.stringify(config)};`));
-const publicFiles = new Set(['/', '/index.html', '/app.js', '/style.css']);
+const publicFiles = new Set(['/', '/index.html', '/app.js', '/style.css', '/logo.svg']);
 app.use((req, res, next) => {
   if (!publicFiles.has(req.path)) return next();
   res.set('Cache-Control', 'no-cache');
@@ -347,7 +347,8 @@ async function parseOrtus(p, month) {
   return rows.map(row => ({
     external_id: `ortus-${row.day}-${row.start}-${row.title}`,
     title: row.title, description: row.description,
-    location: '', starts_at: rigaTimeToIso(row.day, row.start), ends_at: rigaTimeToIso(row.day, row.end)
+    location: row.title.match(/\(([^()]*\d+\s*-\s*\d+[^()]*)\)\s*$/)?.[1]?.trim() || '',
+    starts_at: rigaTimeToIso(row.day, row.start), ends_at: rigaTimeToIso(row.day, row.end)
   }));
 }
 

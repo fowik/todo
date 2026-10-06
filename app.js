@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let filter = 'all';
+let filter = 'today';
 let tasks = [];
 let events = [];
 let studyTasks = [];
@@ -68,6 +68,9 @@ function dayKey(d) {
   return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
 }
 function startDay(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function personalDate(task) { return `${task.task_date}T${task.task_time || '23:59:00'}`; }
+function lessonEnded(event) { return Boolean(event.ends_at && new Date(event.ends_at).getTime() <= Date.now()); }
+const priorityLabels = { high: 'Важная', normal: 'Обычная', low: 'Без спешки' };
 
 async function loadData(showToast = false) {
   if (!db || !currentUser) return;
@@ -95,36 +98,54 @@ function render() {
 
   let items = [
     ...events.map(e => ({...e, type:'pair', date:e.starts_at})),
-    ...tasks.map(t => ({...t, type:'task', date:t.task_date + 'T12:00:00'})),
+    ...tasks.map(t => ({...t, type:'task', date:personalDate(t)})),
     ...studyTasks.map(s => ({...s, type:'study', date:s.due_at}))
   ];
 
   items = items.filter(x => {
     const d = startDay(new Date(x.date));
-    if (filter === 'today') return d.getTime() === today.getTime();
+    if (filter === 'today') return x.type === 'pair' ? d.getTime() === today.getTime() : d <= today;
     if (filter === 'week') return d >= today && d < limit;
-    if (filter === 'tasks') return x.type === 'task';
-    if (filter === 'estudijas') return x.type === 'study';
+    if (filter === 'tasks') return x.type === 'task' || (x.type === 'pair' && d.getTime() === today.getTime());
+    if (filter === 'estudijas') return x.type === 'study' || (x.type === 'pair' && d.getTime() === today.getTime());
     return true;
   }).sort((a,b) => new Date(a.date) - new Date(b.date));
 
   $('#list').innerHTML = '';
-  let last = '';
+  const schedule = document.createElement('section');
+  const assignments = document.createElement('section');
+  const completed = document.createElement('details');
+  schedule.className = assignments.className = 'agenda-section';
+  completed.className = 'completed-tasks';
+  const heading = (section, text) => { const h = document.createElement('h2'); h.className = 'agenda-heading'; h.textContent = text; section.append(h); };
+  heading(schedule, ['today','tasks','estudijas'].includes(filter) ? 'Расписание сегодня' : filter === 'week' ? 'Расписание · 7 дней' : 'Расписание');
+  heading(assignments, filter === 'today' ? 'Задачи · сегодня и раньше' : filter === 'estudijas' ? 'Задания e-studijas' : filter === 'tasks' ? 'Личные задачи' : 'Задачи');
+  $('#list').append(schedule, assignments);
+  if (filter === 'today') {
+    items.sort((a,b) => Number(Boolean(a.done)) - Number(Boolean(b.done)) || new Date(a.date) - new Date(b.date) || ({high:0,normal:1,low:2}[a.priority] ?? 1) - ({high:0,normal:1,low:2}[b.priority] ?? 1));
+  }
+  const doneItems = items.filter(x => x.type !== 'pair' && x.done);
+  const summary = document.createElement('summary');
+  summary.textContent = `Выполнено · ${doneItems.length}`;
+  completed.append(summary);
+  const lastDays = { pair: '', assignment: '' };
   for (const x of items) {
     const k = dayKey(x.date);
-    if (k !== last) {
-      last = k;
+    const group = x.type === 'pair' ? 'pair' : 'assignment';
+    if (filter !== 'today' && !x.done && k !== lastDays[group]) {
+      lastDays[group] = k;
       const h = document.createElement('div');
       h.className = 'day';
       h.textContent = new Date(x.date).toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'long'});
-      $('#list').append(h);
+      (x.type === 'pair' ? schedule : assignments).append(h);
     }
 
     const row = document.createElement('div');
-    row.className = `item item-${x.type} ${x.done ? 'done' : ''} ${x.priority === 'high' ? 'priority-high' : ''}`;
+    row.className = `item item-${x.type} ${x.done ? 'done' : ''} ${x.type === 'task' ? `priority-${x.priority || 'normal'}` : ''} ${x.type === 'pair' && lessonEnded(x) ? 'elapsed' : ''}`;
     let time = 'Задача', meta = '', badge = 'TODO';
     if (x.type === 'pair') {
-      time = new Date(x.starts_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      const clock = value => new Date(value).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Riga'});
+      time = clock(x.starts_at) + (x.ends_at ? `–${clock(x.ends_at)}` : '');
       meta = [x.location, x.description].filter(Boolean).join(' · ');
       badge = 'ORTUS';
     } else if (x.type === 'study') {
@@ -134,8 +155,9 @@ function render() {
 
       badge = 'E-STUDIJAS';
     } else {
-      meta = ({high:'Важная задача', low:'Низкий приоритет', normal:'Личная задача'}[x.priority] || 'Личная задача');
-      badge = x.priority === 'high' ? 'ВАЖНО' : 'TODO';
+      time = x.task_time ? x.task_time.slice(0, 5) : 'Без времени';
+      meta = 'Личная задача';
+      badge = priorityLabels[x.priority] || priorityLabels.normal;
     }
 
     row.innerHTML = `${x.type !== 'pair' ? `<input class="check" type="checkbox" ${x.done?'checked':''}>` : ''}
@@ -145,6 +167,7 @@ function render() {
       ${x.type === 'task' ? '<button class="delete" title="Удалить">✕</button>' : ''}`;
 
     const titleEl = row.querySelector('.title');
+    if (x.type === 'pair' && x.ends_at && new Date(x.starts_at) <= now && new Date(x.ends_at) > now) row.classList.add('in-progress');
     titleEl.textContent = x.title;
     const courseEl = row.querySelector('.course');
     courseEl.textContent = x.type === 'study' ? (x.course_name || 'e-studijas') : '';
@@ -162,11 +185,19 @@ function render() {
       titleEl.appendChild(titleLink);
 
     } else {
-      titleEl.textContent = x.title;
+      titleEl.textContent = x.type === 'pair' && x.location ? x.title.replace(/\s*\([^()]*\)\s*$/, '') : x.title;
     }
     row.querySelector('.meta').textContent = meta;
+    if (filter === 'today' && x.type !== 'pair' && !x.done && startDay(new Date(x.date)) < today) {
+      row.classList.add('overdue');
+      row.querySelector('.meta').textContent += ` · Просрочено: ${new Date(x.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'})}`;
+    }
 
     if (x.type === 'task') {
+      const edit = document.createElement('button');
+      edit.type = 'button'; edit.className = 'task-edit-title'; edit.textContent = x.title;
+      edit.title = 'Изменить задачу'; edit.onclick = () => openTaskEditor(x);
+      titleEl.replaceChildren(edit);
       row.querySelector('.check').onchange = async e => {
         const checked = e.target.checked;
         const {error} = await db.from('tasks').update({done:checked}).eq('id', x.id);
@@ -190,17 +221,27 @@ function render() {
         render();
       };
     }
-    $('#list').append(row);
+    if (x.done && x.type !== 'pair') completed.append(row);
+    else (x.type === 'pair' ? schedule : assignments).append(row);
   }
+  {
+    for (const [section, text] of [[schedule,'В этом периоде пар нет.'],[assignments,'Невыполненных задач в этом фильтре нет.']]) {
+      if (section.children.length === 1) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = text; section.append(p); }
+    }
+  }
+  if (doneItems.length) assignments.append(completed);
 
-  $('#empty').style.display = items.length ? 'none' : 'block';
-  const allDates = [
-    ...events.map(e => new Date(e.starts_at)),
-    ...tasks.map(t => new Date(t.task_date + 'T12:00:00')),
-    ...studyTasks.map(t => new Date(t.due_at))
-  ];
-  $('#todayCount').textContent = allDates.filter(d => startDay(d).getTime() === today.getTime()).length;
-  $('#weekCount').textContent = allDates.filter(d => d >= today && d < limit).length;
+  $('#empty').style.display = 'none';
+  const todayLessons = events.filter(event => startDay(new Date(event.starts_at)).getTime() === today.getTime());
+  const pendingTasks = [
+    ...tasks.map(task => ({...task,date:personalDate(task)})),
+    ...studyTasks.map(task => ({...task,date:task.due_at}))
+  ].filter(task => !task.done && startDay(new Date(task.date)) <= today);
+  const overdueCount = pendingTasks.filter(task => startDay(new Date(task.date)) < today).length;
+  $('#todayCount').textContent = todayLessons.length;
+  $('#todayCountHint').textContent = `Осталось: ${todayLessons.filter(event => !lessonEnded(event)).length} · по расписанию ORTUS`;
+  $('#weekCount').textContent = pendingTasks.length;
+  $('#weekCountHint').textContent = `Сегодня: ${pendingTasks.length - overdueCount} · просрочено: ${overdueCount}`;
   $('#doneCount').textContent = tasks.filter(t => t.done).length + studyTasks.filter(t => t.done).length;
 }
 
@@ -263,7 +304,7 @@ function renderTaskCalendar() {
   const detail = $('#calendarDayTasks');
   detail.replaceChildren();
   const selected = entries.filter(t => t.calendarDay === calendarSelectedDay)
-    .sort((a, b) => Number(a.done) - Number(b.done) || (a.starts_at || a.due_at || `${a.task_date}T12:00:00`).localeCompare(b.starts_at || b.due_at || `${b.task_date}T12:00:00`));
+    .sort((a, b) => Number(a.done) - Number(b.done) || new Date(a.starts_at || a.due_at || personalDate(a)) - new Date(b.starts_at || b.due_at || personalDate(b)));
   if (!selected.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
@@ -272,7 +313,7 @@ function renderTaskCalendar() {
   }
   for (const task of selected) {
     const row = document.createElement('div');
-    row.className = `calendar-task calendar-task-${task.calendarType} ${task.done ? 'done' : ''}`;
+    row.className = `calendar-task calendar-task-${task.calendarType} ${task.done ? 'done' : ''} ${task.calendarType === 'personal' ? `priority-${task.priority || 'normal'}` : ''} ${task.calendarType === 'pair' && lessonEnded(task) ? 'elapsed' : ''}`;
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = task.kind + (task.due_at ? ` · до ${new Date(task.due_at).toLocaleTimeString('ru-RU', {
@@ -284,11 +325,43 @@ function renderTaskCalendar() {
       });
       meta.textContent = `${task.kind} · ${time(task.starts_at)}${task.ends_at ? `–${time(task.ends_at)}` : ''} (Рига)${task.location ? ` · ${task.location}` : ''}`;
     }
+    if (task.calendarType === 'personal') meta.textContent += ` · ${task.task_time ? task.task_time.slice(0, 5) : 'Без времени'} · ${priorityLabels[task.priority] || priorityLabels.normal}`;
     const title = document.createElement(task.task_url ? 'a' : 'div');
     title.className = 'title';
     title.textContent = task.title;
+    if (task.calendarType === 'personal') {
+      const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'task-edit-title'; edit.textContent = task.title;
+      edit.onclick = () => openTaskEditor(task); title.replaceChildren(edit);
+    }
     if (task.task_url) { title.href = task.task_url; title.target = '_blank'; title.rel = 'noopener noreferrer'; }
-    row.append(meta, title);
+    const content = document.createElement('div');
+    content.className = 'calendar-task-content';
+    content.append(meta, title);
+    if (task.calendarType !== 'pair') {
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'check';
+      check.checked = Boolean(task.done);
+      check.setAttribute('aria-label', `Выполнено: ${task.title}`);
+      check.onchange = async () => {
+        const checked = check.checked;
+        check.disabled = true;
+        try {
+          const table = task.calendarType === 'study' ? 'study_tasks' : 'tasks';
+          const {error} = await db.from(table).update({done:checked}).eq('id', task.id);
+          if (error) throw error;
+          const original = (task.calendarType === 'study' ? studyTasks : tasks).find(item => item.id === task.id);
+          if (original) original.done = checked;
+          render();
+        } catch (error) {
+          check.checked = !checked;
+          check.disabled = false;
+          toast(error.message || 'Не удалось сохранить выполнение задачи', true);
+        }
+      };
+      row.append(check);
+    }
+    row.append(content);
     detail.append(row);
   }
 }
@@ -304,6 +377,33 @@ function setTaskView(calendar) {
   }
   if (calendar) renderTaskCalendar();
 }
+let editingTaskId = null;
+function openTaskEditor(task) {
+  editingTaskId = task.id;
+  $('#editTaskTitle').value = task.title;
+  $('#editTaskDate').value = task.task_date;
+  $('#editTaskTime').value = (task.task_time || '').slice(0,5);
+  $('#editTaskPriority').value = task.priority || 'normal';
+  $('#editTaskPriority').refreshPicker();
+  $('#editTaskDate').refreshPicker();
+  $('#editTaskTime').refreshPicker();
+  $('#editTaskDialog').showModal();
+}
+$('#editTaskClose').onclick = () => $('#editTaskDialog').close();
+$('#editTaskForm').onsubmit = async event => {
+  event.preventDefault();
+  const changes = {title:$('#editTaskTitle').value.trim(),task_date:$('#editTaskDate').value,task_time:$('#editTaskTime').value || null,priority:$('#editTaskPriority').value};
+  if (!changes.title) return;
+  $('#editTaskSave').disabled = true;
+  try {
+    const {error} = await db.from('tasks').update(changes).eq('id', editingTaskId);
+    if (error) throw error;
+    const task = tasks.find(item => item.id === editingTaskId);
+    if (task) Object.assign(task, changes);
+    $('#editTaskDialog').close(); render(); toast('Задача обновлена');
+  } catch(error) { toast(error.message, true); }
+  finally { $('#editTaskSave').disabled = false; }
+};
 $('#listTab').onclick = () => setTaskView(false);
 $('#calendarTab').onclick = () => setTaskView(true);
 $('#calendarPrev').onclick = () => { calendarMonth.setMonth(calendarMonth.getMonth() - 1); renderTaskCalendar(); };
@@ -571,8 +671,10 @@ $('#addTask').onclick = async () => {
   const title = $('#taskText').value.trim();
   const task_date = $('#taskDate').value;
   const priority = $('#taskPriority').value;
+  const task_time = $('#taskTime').value || null;
   if (!title || !task_date) return toast('Введи задачу и дату', true);
-  const {data,error} = await db.from('tasks').insert({user_id:currentUser.id,title,task_date,priority}).select().single();
+  const {data,error} = await db.from('tasks').insert({user_id:currentUser.id,title,task_date,task_time,priority}).select().single();
+  if (error && /task_time/i.test(error.message)) return toast('Для сохранения времени выполни миграцию tasks-time.sql в Supabase.', true);
   if (error) return toast(error.message,true);
   tasks.push(data); $('#taskText').value=''; render();
 };
@@ -595,7 +697,129 @@ $('#theme').onclick = () => {
   localStorage.setItem('dark', document.documentElement.classList.contains('dark') ? '1':'0');
 };
 if (localStorage.getItem('dark') === '1') document.documentElement.classList.add('dark');
+function applyConnectionSettings() {
+  $('.rtu-connect').classList.toggle('hidden', !$('#showRtu').checked);
+  $('.ortus-connect').classList.toggle('hidden', !$('#showOrtus').checked);
+  $('.toolbar .upload').classList.toggle('hidden', !$('#showOrtus').checked);
+  $('#clearCalendar').classList.toggle('hidden', !$('#showOrtus').checked);
+}
+for (const [id, key] of [['showRtu', 'show-rtu'], ['showOrtus', 'show-ortus']]) {
+  $("#" + id).checked = localStorage.getItem(key) !== '0';
+  $("#" + id).onchange = event => { localStorage.setItem(key, event.target.checked ? '1' : '0'); applyConnectionSettings(); };
+}
+function toggleSettings(open) {
+  const panel = $('#settingsPanel');
+  if (open && !panel.open) panel.showModal();
+  if (!open && panel.open) panel.close();
+  $('#settingsToggle').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('settings-open', open);
+}
+$('#settingsToggle').onclick = () => toggleSettings(!$('#settingsPanel').open);
+$('#settingsClose').onclick = () => toggleSettings(false);
+$('#settingsPanel').addEventListener('close', () => {
+  $('#settingsToggle').setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('settings-open');
+});
+$('#settingsPanel').addEventListener('click', event => {
+  if (event.target !== $('#settingsPanel')) return;
+  const rect = event.target.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) toggleSettings(false);
+});
+applyConnectionSettings();
+setInterval(() => { if (currentUser) render(); }, 30000);
 $('#taskDate').value = dayKey(new Date());
+
+function attachTaskPicker(id, mode) {
+  const input = $('#' + id);
+  input.type = 'hidden';
+  const wrapper = document.createElement('div'); wrapper.className = 'task-picker';
+  input.before(wrapper); wrapper.append(input);
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'month-toggle';
+  toggle.setAttribute('aria-label', mode === 'date' ? 'Выбрать дату задачи' : 'Выбрать время задачи');
+  toggle.setAttribute('aria-expanded', 'false');
+  const popup = document.createElement('div'); popup.className = 'month-popup task-picker-popup hidden';
+  popup.setAttribute('role','group'); popup.setAttribute('aria-label',mode === 'date' ? 'Дата задачи' : 'Время задачи');
+  wrapper.append(toggle,popup);
+  let month;
+  function close(){ popup.classList.add('hidden'); toggle.setAttribute('aria-expanded','false'); }
+  function update(){
+    toggle.textContent = (mode === 'date' ? '▦  ' : '◷  ') + (input.value ? mode === 'date' ? new Date(input.value+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'}) : input.value.slice(0,5) : 'Без времени');
+  }
+  function pick(value){ input.value=value; update(); close(); toggle.focus(); }
+  function button(text,action,cls='month-option'){
+    const b=document.createElement('button'); b.type='button'; b.className=cls; b.textContent=text; b.onclick=action; return b;
+  }
+  function drawDate(){
+    popup.replaceChildren();
+    const head=document.createElement('div'); head.className='month-year-row';
+    const label=document.createElement('strong'); label.textContent=month.toLocaleDateString('ru-RU',{month:'long',year:'numeric'});
+    const prev=button('‹',()=>{month.setMonth(month.getMonth()-1);drawDate()},'month-year-arrow'); prev.setAttribute('aria-label','Предыдущий месяц');
+    const next=button('›',()=>{month.setMonth(month.getMonth()+1);drawDate()},'month-year-arrow'); next.setAttribute('aria-label','Следующий месяц');
+    head.append(prev,label,next); popup.append(head);
+    const grid=document.createElement('div');grid.className='task-date-grid';
+    for(const weekday of ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']){const el=document.createElement('span');el.textContent=weekday;el.className='picker-weekday';grid.append(el)}
+    const first=new Date(month);first.setDate(1-((first.getDay()+6)%7));
+    for(let i=0;i<42;i++){
+      const date=new Date(first);date.setDate(first.getDate()+i);const key=dayKey(date);
+      const b=button(String(date.getDate()),()=>pick(key));
+      b.classList.toggle('selected',key===input.value);b.classList.toggle('outside-month',date.getMonth()!==month.getMonth());
+      b.setAttribute('aria-label',date.toLocaleDateString('ru-RU'));b.setAttribute('aria-pressed',String(key===input.value));grid.append(b);
+    }
+    popup.append(grid,button('Сегодня',()=>pick(dayKey(new Date())),'month-current'));
+  }
+  function drawTime(){
+    popup.replaceChildren();
+    const label=document.createElement('strong');label.textContent='Время задачи';popup.append(label);
+    const field=document.createElement('input');field.type='text';field.inputMode='numeric';field.placeholder='Например, 18:30';field.value=input.value.slice(0,5);field.className='picker-time-input';field.setAttribute('aria-label','Время в формате ЧЧ:ММ');
+    const hint=document.createElement('p');hint.className='muted small';hint.textContent='24-часовой формат · можно ввести вручную';
+    const apply=()=>{const value=field.value.trim();if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)){field.setCustomValidity('Введи время от 00:00 до 23:59');field.reportValidity();return}pick(value)};
+    field.oninput=()=>field.setCustomValidity('');field.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();apply()}};
+    const grid=document.createElement('div');grid.className='picker-time-presets';
+    for(const value of ['08:00','10:00','12:00','14:00','16:00','18:00'])grid.append(button(value,()=>{field.value=value;field.setCustomValidity('')}));
+    popup.append(field,hint,grid,button('Применить',apply,'picker-time-apply'),button('Без времени',()=>pick(''),'month-current'));
+  }
+  toggle.onclick=()=>{
+    if(!popup.classList.contains('hidden'))return close();
+    document.querySelectorAll('.task-picker-popup').forEach(el=>el.classList.add('hidden'));
+    document.querySelectorAll('.task-picker .month-toggle').forEach(el=>el.setAttribute('aria-expanded','false'));
+    month=new Date((input.value&&mode==='date'?input.value:dayKey(new Date()))+'T12:00:00');month.setDate(1);
+    mode==='date'?drawDate():drawTime();popup.classList.remove('hidden');toggle.setAttribute('aria-expanded','true');
+  };
+  document.addEventListener('click',event=>{if(!wrapper.contains(event.target))close()});
+  wrapper.addEventListener('keydown',event=>{if(event.key==='Escape'&&!popup.classList.contains('hidden')){event.preventDefault();event.stopPropagation();close();toggle.focus()}});
+  input.refreshPicker=update;update();
+}
+for(const id of ['taskDate','editTaskDate'])attachTaskPicker(id,'date');
+for(const id of ['taskTime','editTaskTime'])attachTaskPicker(id,'time');
+function attachPriorityPicker(id) {
+  const select = $('#' + id);
+  select.hidden = true;
+  const wrapper = document.createElement('div'); wrapper.className = 'task-picker priority-picker';
+  select.before(wrapper); wrapper.append(select);
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'month-toggle priority-toggle';
+  toggle.setAttribute('aria-label', 'Выбрать важность задачи'); toggle.setAttribute('aria-expanded','false');
+  const menu = document.createElement('div'); menu.className = 'month-popup priority-popup hidden';
+  function close(){menu.classList.add('hidden');toggle.setAttribute('aria-expanded','false')}
+  function update(){
+    toggle.replaceChildren();
+    const dot=document.createElement('span'); dot.className=`priority-dot priority-${select.value}`;
+    const text=document.createElement('span'); text.textContent=priorityLabels[select.value];
+    const arrow=document.createElement('span'); arrow.className='month-chevron';
+    toggle.append(dot,text,arrow);
+    menu.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.value===select.value)));
+  }
+  for(const value of ['normal','high','low']){
+    const button=document.createElement('button');button.type='button';button.className='priority-option';button.dataset.value=value;
+    const dot=document.createElement('span');dot.className=`priority-dot priority-${value}`;
+    const text=document.createElement('span');text.textContent=priorityLabels[value];button.append(dot,text);
+    button.onclick=()=>{select.value=value;update();close();toggle.focus()};menu.append(button);
+  }
+  toggle.onclick=()=>{const open=menu.classList.contains('hidden');menu.classList.toggle('hidden',!open);toggle.setAttribute('aria-expanded',String(open))};
+  document.addEventListener('click',event=>{if(!wrapper.contains(event.target))close()});
+  wrapper.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.classList.contains('hidden')){event.preventDefault();event.stopPropagation();close();toggle.focus()}});
+  wrapper.append(toggle,menu);select.refreshPicker=update;update();
+}
+for(const id of ['taskPriority','editTaskPriority'])attachPriorityPicker(id);
 
 if (db) {
   db.auth.getSession().then(({data}) => setSession(data.session?.user || null));
