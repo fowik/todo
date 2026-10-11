@@ -418,6 +418,10 @@ async function setSession(user) {
   currentUser = user || null;
   $('#authCard').classList.toggle('hidden', !!currentUser);
   $('#mainContent').classList.toggle('hidden', !currentUser);
+  $('#settingsAccount').classList.toggle('hidden', !currentUser);
+  $('#settingsToggle').classList.toggle('hidden', !currentUser);
+  $('#logout').classList.toggle('hidden', !currentUser);
+  if (!currentUser && $('#settingsPanel').open) toggleSettings(false);
   if (!currentUser) { tasks=[]; events=[]; studyTasks=[]; return; }
   $('#accountEmail').textContent = currentUser.email || 'Аккаунт';
   await loadData();
@@ -442,7 +446,12 @@ async function signUp() {
 $('#login').onclick = signIn;
 $('#signup').onclick = signUp;
 $('#password').addEventListener('keydown', e => { if (e.key === 'Enter' && db) signIn(); });
-$('#logout').onclick = async () => { if (db) await db.auth.signOut(); };
+$('#logout').onclick = async () => {
+  if (!db) return;
+  const {error} = await db.auth.signOut();
+  if (error) return toast(error.message, true);
+  toggleSettings(false);
+};
 $('#refresh').onclick = () => loadData(true);
 
 function setRtuSyncUi(state, message = '', mfaNumber = null, source = 'estudijas') {
@@ -696,7 +705,7 @@ $('#theme').onclick = () => {
   document.documentElement.classList.toggle('dark');
   localStorage.setItem('dark', document.documentElement.classList.contains('dark') ? '1':'0');
 };
-if (localStorage.getItem('dark') === '1') document.documentElement.classList.add('dark');
+if (localStorage.getItem('dark') !== '0') document.documentElement.classList.add('dark');
 function applyConnectionSettings() {
   $('.rtu-connect').classList.toggle('hidden', !$('#showRtu').checked);
   $('.ortus-connect').classList.toggle('hidden', !$('#showOrtus').checked);
@@ -825,3 +834,29 @@ if (db) {
   db.auth.getSession().then(({data}) => setSession(data.session?.user || null));
   db.auth.onAuthStateChange((_event, session) => setSession(session?.user || null));
 }
+
+// The overlay is inside the button and clips only the wave, not popup menus.
+document.addEventListener('pointerdown', event => {
+  const button = event.target.closest('button, .upload');
+  if (!button || button.disabled || event.button !== 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const rect = button.getBoundingClientRect();
+  const wave = document.createElement('span');
+  wave.className = 'button-wave';
+  wave.setAttribute('aria-hidden', 'true');
+  button.classList.add('wave-host');
+  const buttonStyle = getComputedStyle(button);
+  Object.assign(wave.style, {
+    borderRadius:buttonStyle.borderRadius,
+    top:`-${buttonStyle.borderTopWidth}`,right:`-${buttonStyle.borderRightWidth}`,
+    bottom:`-${buttonStyle.borderBottomWidth}`,left:`-${buttonStyle.borderLeftWidth}`
+  });
+  const circle = document.createElement('span');
+  circle.className = 'button-wave-circle';
+  const x = event.clientX - rect.left, y = event.clientY - rect.top;
+  const diameter = Math.hypot(Math.max(x, rect.width-x), Math.max(y, rect.height-y))*2;
+  Object.assign(circle.style,{left:x+'px',top:y+'px',width:diameter+'px',height:diameter+'px'});
+  wave.append(circle);
+  button.append(wave);
+  circle.addEventListener('animationend',()=>wave.remove(),{once:true});
+  setTimeout(()=>wave.remove(),600);
+});

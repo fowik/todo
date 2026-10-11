@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#b7ff35">
   <title>StudyFlow</title>
+  <script>if (localStorage.getItem('dark') === '0') document.documentElement.classList.remove('dark');</script>
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="stylesheet" href="style.css?v=20261007-agenda-7">
 </head>
@@ -15,11 +16,14 @@
     <header>
       <div>
         <div class="brand-line"><img class="brand-icon" src="logo.svg" width="38" height="38" alt=""><p class="eyebrow">ORTUS • E-STUDIJAS • TASKS</p></div>
-        <h1>Учёба без хаоса.</h1>
-        <p class="muted">Пары, задания из e-studijas и личные задачи — в одном месте.</p>
       </div>
       <div class="header-actions">
-        <button id="settingsToggle" class="ghost settings-toggle" aria-expanded="false" aria-controls="settingsPanel"><span class="burger-icon" aria-hidden="true"><i></i><i></i><i></i></span>Настройки</button>
+        <div id="settingsAccount" class="header-account hidden" aria-label="Аккаунт">
+          <span class="status-dot account-status-dot" title="Вход выполнен" role="img" aria-label="Вход выполнен"></span>
+          <span id="accountEmail">—</span>
+        <button id="logout" class="ghost icon-btn logout-icon hidden" title="Выйти" aria-label="Выйти"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M16 8l4 4-4 4M9 12h11"/></svg></button>
+        </div>
+        <button id="settingsToggle" class="ghost settings-toggle hidden" title="Настройки" aria-label="Настройки" aria-expanded="false" aria-controls="settingsPanel"><span class="burger-icon" aria-hidden="true"><i></i><i></i><i></i></span></button>
         <button id="theme" class="ghost icon-btn" title="Сменить тему">◐</button>
       </div>
     </header>
@@ -56,15 +60,6 @@
     </section>
 
     <div id="mainContent" class="hidden">
-      <section class="account-row">
-        <div>
-          <span class="status-dot"></span>
-          <span id="accountEmail">—</span>
-          <span class="muted">• синхронизация включена</span>
-        </div>
-        <button id="logout" class="ghost compact">Выйти</button>
-      </section>
-
       <details class="panel rtu-connect sync-panel">
         <summary class="rtu-connect-head">
           <div>
